@@ -15,6 +15,9 @@ class ClientHandler(threading.Thread):
         self.nickname = f"Guest{addr[1]}" # 임시 닉네임
         self.running = True
 
+        # [추가] 접속 즉시 관리자에 등록
+        self.channel_manager.add_client(self)
+
     def run(self):
         logger.info(f"Connected: {self.addr}")
         buffer = ""
@@ -46,11 +49,16 @@ class ClientHandler(threading.Thread):
         
         if command == "NICK":
             if params:
-                old_nick = self.nickname
-                self.nickname = params[0]
-                logger.info(f"Nick change: {old_nick} -> {self.nickname}")
-                # 클라이언트에게 환영 메시지 예시 (RFC 호환)
-                self.send_message(f":server 001 {self.nickname} :Welcome to the IRC Network {self.nickname}")
+                new_nick = params[0]
+                # [수정] 닉네임 중복 체크 및 변경
+                if self.channel_manager.change_nickname(self, new_nick):
+                    old_nick = self.nickname
+                    self.nickname = new_nick
+                    logger.info(f"Nick change: {old_nick} -> {self.nickname}")
+                    self.send_message(f":server 001 {self.nickname} :Welcome {self.nickname}")
+                else:
+                    # 433 ERR_NICKNAMEINUSE
+                    self.send_message(f":server 433 * {new_nick} :Nickname is already in use")
 
         elif command == "USER":
             # USER 명령 처리 (여기서는 로그만 출력)
@@ -92,8 +100,16 @@ class ClientHandler(threading.Thread):
                     formatted_msg = f":{self.nickname} PRIVMSG {target} :{msg}"
                     self.channel_manager.broadcast(target, formatted_msg, sender=self)
                 else:
-                    # 1:1 DM 등 구현 예정
-                    pass
+                    # [추가] 1:1 귓속말 구현
+                    target_client = self.channel_manager.get_client_by_nick(target)
+                    if target_client:
+                        # 수신자에게 전송
+                        target_client.send_message(f":{self.nickname} PRIVMSG {target} :{msg}")
+                        # (선택) 송신자에게도 에코해줄 수 있음 (일반적으론 클라이언트가 처리)
+                    else:
+                        # 401 ERR_NOSUCHNICK
+                        self.send_message(f":server 401 {self.nickname} {target} :No such nick/channel")
+
         elif command == "PING":
             if params:
                 self.send_message(f"PONG {params[0]}")
