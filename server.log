@@ -1,0 +1,17 @@
+2025-11-24 20:15:42,432 - Server - INFO - IRC Server started on 0.0.0.0:6667
+2025-11-24 20:16:06,788 - Handler - INFO - Connected: ('127.0.0.1', 65479)
+2025-11-24 20:16:06,788 - Handler - DEBUG - Received: NICK ['Guest']
+2025-11-24 20:16:06,789 - Handler - INFO - Nick change: Guest65479 -> Guest
+2025-11-24 20:16:06,789 - Handler - DEBUG - Received: USER ['Guest', '0', '*', 'RealName']
+2025-11-24 20:16:14,336 - Handler - DEBUG - Received: JOIN []
+2025-11-24 20:16:18,280 - Handler - DEBUG - Received: JOIN ['#channel']
+2025-11-24 20:16:18,280 - ChannelManager - INFO - Channel #channel created.
+2025-11-24 20:16:18,281 - ChannelManager - INFO - Guest joined #channel
+2025-11-24 20:16:21,380 - Handler - DEBUG - Received: PRIVMSG ['#channel', 'hi']
+2025-11-24 20:16:39,496 - Handler - INFO - Disconnected: ('127.0.0.1', 65479)
+2025-11-24 20:16:39,496 - ChannelManager - INFO - Guest left #channel
+2025-11-24 20:16:39,496 - ChannelManager - INFO - Channel #channel deleted (empty).
+2025-11-24 20:19:01,018 - Server - INFO - IRC Server started on 0.0.0.0:6667
+2025-11-24 20:19:04,042 - Server - INFO - 
+Server stopping by user request (Ctrl+C)...
+2025-11-24 20:19:04,043 - Server - INFO - Server socket closed.

@@ -60,8 +60,28 @@ class ClientHandler(threading.Thread):
             if params:
                 channel = params[0]
                 self.channel_manager.join_channel(channel, self)
-                # 성공 메시지
-                self.send_message(f":{self.nickname} JOIN {channel}")
+                # 성공 메시지 (JOIN 메시지는 채널의 다른 사용자에게도 브로드캐스트 해야 함)
+                join_msg = f":{self.nickname} JOIN {channel}"
+                self.channel_manager.broadcast(channel, join_msg, sender=None) # sender=None -> 모두에게 전송
+
+        elif command == "PART":
+            if params:
+                channel = params[0]
+                reason = params[1] if len(params) > 1 else "Leaving"
+                # PART 메시지 브로드캐스트
+                part_msg = f":{self.nickname} PART {channel} :{reason}"
+                self.channel_manager.broadcast(channel, part_msg, sender=None)
+                self.channel_manager.leave_channel(channel, self)
+
+        elif command == "NAMES":
+            if params:
+                channel = params[0]
+                users = self.channel_manager.get_users_in_channel(channel)
+                if users:
+                    # RPL_NAMREPLY (353) & RPL_ENDOFNAMES (366)
+                    user_list = " ".join([u.nickname for u in users])
+                    self.send_message(f":server 353 {self.nickname} = {channel} :{user_list}")
+                    self.send_message(f":server 366 {self.nickname} {channel} :End of /NAMES list")
 
         elif command == "PRIVMSG":
             if len(params) >= 2:

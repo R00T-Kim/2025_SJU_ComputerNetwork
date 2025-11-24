@@ -43,3 +43,8 @@ class ChannelManager:
         """사용자가 접속을 끊었을 때 모든 채널에서 제거"""
         for channel in list(self.channels.keys()):
             self.leave_channel(channel, client_handler)
+
+    def get_users_in_channel(self, channel_name):
+        if channel_name in self.channels:
+            return list(self.channels[channel_name])
+        return []
