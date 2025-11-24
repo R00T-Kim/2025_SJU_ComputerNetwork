@@ -1,0 +1,3 @@
+# requirements.txt
+# No external dependencies required.
+# All modules used are part of Python's standard library (tkinter, socket, threading, logging).

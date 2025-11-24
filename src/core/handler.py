@@ -1,62 +1,96 @@
-"""
-클라이언트 접속을 처리하는 핸들러 모듈입니다.
-각 클라이언트마다 스레드로 실행되며, 메시지 수신 및 응답을 처리합니다.
-"""
-
+# src/core/handler.py
 import threading
-from src.core.parser import parse_message
+import socket
+from src.core.parser import IRCParser
+from src.utils.logger import get_logger
+
+logger = get_logger("Handler")
 
 class ClientHandler(threading.Thread):
-    def __init__(self, client_socket, addr, channel_manager):
+    def __init__(self, sock, addr, channel_manager):
         super().__init__()
-        self.client_socket = client_socket
+        self.sock = sock
         self.addr = addr
         self.channel_manager = channel_manager
-        self.nickname = None
+        self.nickname = f"Guest{addr[1]}" # 임시 닉네임
         self.running = True
 
     def run(self):
-        """스레드 실행 메인 루프"""
-        print(f"[Handler] Connected by {self.addr}")
-        try:
-            while self.running:
-                # 데이터 수신 (최대 1024 바이트)
-                data = self.client_socket.recv(1024)
+        logger.info(f"Connected: {self.addr}")
+        buffer = ""
+        while self.running:
+            try:
+                data = self.sock.recv(4096)
                 if not data:
                     break
                 
-                # 디코딩 및 파싱
-                text = data.decode('utf-8')
-                parsed = parse_message(text)
+                buffer += data.decode('utf-8')
                 
-                if parsed:
-                    self.process_command(parsed)
+                while "\r\n" in buffer:
+                    line, buffer = buffer.split("\r\n", 1)
+                    if not line: continue
                     
-        except Exception as e:
-            print(f"[Handler] Error: {e}")
-        finally:
-            self.close_connection()
+                    command, params = IRCParser.parse(line)
+                    self.handle_command(command, params)
+                    
+            except ConnectionResetError:
+                break
+            except Exception as e:
+                logger.error(f"Error handling client {self.addr}: {e}")
+                break
+        
+        self.cleanup()
 
-    def process_command(self, parsed_data):
-        """파싱된 명령어를 처리하는 분기문"""
-        cmd = parsed_data['command']
-        params = parsed_data['params']
+    def handle_command(self, command, params):
+        logger.debug(f"Received: {command} {params}")
         
-        print(f"[Handler] Received Command: {cmd}, Params: {params}")
+        if command == "NICK":
+            if params:
+                old_nick = self.nickname
+                self.nickname = params[0]
+                logger.info(f"Nick change: {old_nick} -> {self.nickname}")
+                # 클라이언트에게 환영 메시지 예시 (RFC 호환)
+                self.send_message(f":server 001 {self.nickname} :Welcome to the IRC Network {self.nickname}")
+
+        elif command == "USER":
+            # USER 명령 처리 (여기서는 로그만 출력)
+            pass
+
+        elif command == "JOIN":
+            if params:
+                channel = params[0]
+                self.channel_manager.join_channel(channel, self)
+                # 성공 메시지
+                self.send_message(f":{self.nickname} JOIN {channel}")
+
+        elif command == "PRIVMSG":
+            if len(params) >= 2:
+                target = params[0]
+                msg = params[1]
+                # 채널 메시지인 경우
+                if target.startswith("#"):
+                    formatted_msg = f":{self.nickname} PRIVMSG {target} :{msg}"
+                    self.channel_manager.broadcast(target, formatted_msg, sender=self)
+                else:
+                    # 1:1 DM 등 구현 예정
+                    pass
+        elif command == "PING":
+            if params:
+                self.send_message(f"PONG {params[0]}")
         
-        if cmd == 'NICK':
-            # 닉네임 설정 로직
-            pass
-        elif cmd == 'JOIN':
-            # 채널 입장 로직
-            pass
-        elif cmd == 'PRIVMSG':
-            # 메시지 전송 로직
-            pass
-        elif cmd == 'QUIT':
+        elif command == "QUIT":
             self.running = False
 
-    def close_connection(self):
-        """연결 종료 처리"""
-        print(f"[Handler] Closing connection for {self.addr}")
-        self.client_socket.close()
+    def send_message(self, msg):
+        try:
+            self.sock.send(f"{msg}\r\n".encode('utf-8'))
+        except Exception as e:
+            logger.error(f"Send error: {e}")
+
+    def cleanup(self):
+        logger.info(f"Disconnected: {self.addr}")
+        self.channel_manager.remove_user(self)
+        try:
+            self.sock.close()
+        except:
+            pass

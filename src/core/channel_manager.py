@@ -1,35 +1,45 @@
-"""
-채널과 유저 정보를 관리하는 매니저 클래스입니다.
-채널 생성, 삭제, 유저 입장/퇴장 등의 상태 관리를 담당합니다.
-"""
+# src/core/channel_manager.py
+from src.utils.logger import get_logger
+
+logger = get_logger("ChannelManager")
 
 class ChannelManager:
     def __init__(self):
-        # { "채널명": [유저소켓1, 유저소켓2, ...] } 형태의 딕셔너리 예시
-        self.channels = {}
-        # { "유저소켓": "닉네임" } 형태의 딕셔너리 예시
+        # 채널 이름 -> 사용자 리스트 (혹은 Set) 매핑
+        self.channels = {} 
+        # 사용자 정보 저장 (필요 시 확장)
         self.users = {}
 
     def create_channel(self, channel_name):
-        """새로운 채널을 생성합니다."""
         if channel_name not in self.channels:
-            self.channels[channel_name] = []
-            print(f"[ChannelManager] Channel created: {channel_name}")
-            return True
-        return False
+            self.channels[channel_name] = set()
+            logger.info(f"Channel {channel_name} created.")
 
-    def join_channel(self, channel_name, user_socket):
-        """유저를 채널에 추가합니다."""
-        # 로직 구현 필요
-        pass
+    def join_channel(self, channel_name, client_handler):
+        if channel_name not in self.channels:
+            self.create_channel(channel_name)
+        self.channels[channel_name].add(client_handler)
+        logger.info(f"{client_handler.nickname} joined {channel_name}")
 
-    def leave_channel(self, channel_name, user_socket):
-        """유저를 채널에서 제거합니다."""
-        # 로직 구현 필요
-        pass
+    def leave_channel(self, channel_name, client_handler):
+        if channel_name in self.channels:
+            if client_handler in self.channels[channel_name]:
+                self.channels[channel_name].remove(client_handler)
+                logger.info(f"{client_handler.nickname} left {channel_name}")
+                if not self.channels[channel_name]:
+                    del self.channels[channel_name]
+                    logger.info(f"Channel {channel_name} deleted (empty).")
 
-    def get_users_in_channel(self, channel_name):
-        """특정 채널에 있는 유저 목록을 반환합니다."""
-        return self.channels.get(channel_name, [])
+    def broadcast(self, channel_name, message, sender=None):
+        if channel_name in self.channels:
+            for client in self.channels[channel_name]:
+                if client != sender:
+                    try:
+                        client.send_message(message)
+                    except Exception as e:
+                        logger.error(f"Error sending to {client.nickname}: {e}")
 
-# 싱글톤처럼 사용하거나 서버 인스턴스에서 하나만 생성해서 사용
+    def remove_user(self, client_handler):
+        """사용자가 접속을 끊었을 때 모든 채널에서 제거"""
+        for channel in list(self.channels.keys()):
+            self.leave_channel(channel, client_handler)
