@@ -97,6 +97,8 @@ class ClientHandler(threading.Thread):
         elif command == "PING":
             if params:
                 self.send_message(f"PONG {params[0]}")
+            else:
+                self.send_message("PONG")
         
         elif command == "QUIT":
             self.running = False

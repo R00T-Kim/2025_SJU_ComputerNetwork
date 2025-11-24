@@ -3,6 +3,7 @@ import tkinter as tk
 from tkinter import scrolledtext, messagebox
 import socket
 import threading
+from src.core.parser import IRCParser
 
 # --- 설정 ---
 HOST = '127.0.0.1'
@@ -15,6 +16,7 @@ class IRCClientGUI:
         self.socket = None
         self.is_connected = False
         self.current_channel = None
+        self.nickname = "Guest"
         
         # 1. 상단: 접속 정보
         self.top_frame = tk.Frame(root)
@@ -70,7 +72,7 @@ class IRCClientGUI:
             messagebox.showerror("Error", "Port must be a number")
             return
 
-        nickname = self.nick_entry.get()
+        self.nickname = self.nick_entry.get()
         
         try:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -78,8 +80,8 @@ class IRCClientGUI:
             self.is_connected = True
             
             # RFC 1459 접속 시도
-            self.socket.send(f"NICK {nickname}\r\n".encode('utf-8'))
-            self.socket.send(f"USER {nickname} 0 * :RealName\r\n".encode('utf-8'))
+            self.socket.send(f"NICK {self.nickname}\r\n".encode('utf-8'))
+            self.socket.send(f"USER {self.nickname} 0 * :RealName\r\n".encode('utf-8'))
             
             self.log(f"[System] Connected to {host}:{port}")
             self.connect_btn.config(state='disabled')
@@ -92,41 +94,78 @@ class IRCClientGUI:
 
     def receive_loop(self):
         """서버로부터 메시지를 계속 받아서 화면에 뿌림"""
+        buffer = ""
         while self.is_connected:
             try:
                 data = self.socket.recv(4096)
                 if not data: break
                 
-                messages = data.decode('utf-8').split('\r\n')
-                for msg in messages:
-                    if not msg: continue
+                buffer += data.decode('utf-8')
+                
+                while "\r\n" in buffer:
+                    line, buffer = buffer.split("\r\n", 1)
+                    if not line: continue
                     
-                    # 간단한 파싱 (PRIVMSG 포맷팅)
-                    if " PRIVMSG " in msg:
-                        try:
-                            # :sender PRIVMSG #target :message
-                            parts = msg.split(" PRIVMSG ", 1)
-                            sender_info = parts[0] # :nick OR :nick!user@host
-                            rest = parts[1]
+                    # IRCParser를 사용한 구조화된 파싱
+                    command, params = IRCParser.parse(line)
+                    
+                    # Prefix 파싱 (예: :nick!user@host COMMAND ...)
+                    prefix = ""
+                    if line.startswith(":"):
+                        parts = line.split(" ", 1)
+                        prefix = parts[0][1:] # : 제거
+                        if "!" in prefix: prefix = prefix.split("!")[0] # user@host 제거
+
+                    if command == "PRIVMSG":
+                        if len(params) >= 2:
+                            target = params[0]
+                            msg = params[1]
+                            self.log(f"[{target}] <{prefix}> {msg}")
                             
-                            sender = sender_info[1:] if sender_info.startswith(":") else sender_info
-                            if "!" in sender: sender = sender.split("!")[0]
-                            
-                            target, content = rest.split(" :", 1)
-                            self.log(f"[{target}] <{sender}> {content}")
-                        except:
-                            self.log(msg)
-                    elif " PING " in msg:
-                         # PING 응답 (자동 PONG)
-                         try:
-                             check = msg.split(" PING ", 1)[1]
-                             self.socket.send(f"PONG {check}\r\n".encode('utf-8'))
-                         except:
-                             pass
+                    elif command == "JOIN":
+                        channel = params[0] if params else "???"
+                        self.log(f"[System] {prefix} joined {channel}")
+                        
+                    elif command == "PART":
+                        channel = params[0] if params else "???"
+                        reason = params[1] if len(params) > 1 else ""
+                        self.log(f"[System] {prefix} left {channel} ({reason})")
+                        
+                    elif command == "QUIT":
+                        reason = params[0] if params else ""
+                        self.log(f"[System] {prefix} quit ({reason})")
+                        
+                    elif command == "NICK":
+                        new_nick = params[0] if params else "???"
+                        self.log(f"[System] {prefix} changed nickname to {new_nick}")
+                        if prefix == self.nickname:
+                            self.nickname = new_nick # 내 닉네임 업데이트
+
+                    elif command == "PING":
+                        if params:
+                            self.socket.send(f"PONG {params[0]}\r\n".encode('utf-8'))
+                        else:
+                            self.socket.send("PONG\r\n".encode('utf-8'))
+
+                    elif command == "353": # RPL_NAMREPLY
+                        # params: [me, =, #channel, :nick1 nick2 ...]
+                        if len(params) >= 4:
+                            channel = params[2]
+                            users = params[3]
+                            self.log(f"[Users in {channel}] {users}")
+                    
+                    elif command == "366": # RPL_ENDOFNAMES
+                        pass # 무시
+
+                    elif command == "001": # Welcome
+                        self.log(f"[Server] {params[-1] if params else 'Welcome'}")
+
                     else:
-                        self.log(msg)
+                        # 기타 메시지는 그대로 출력
+                        self.log(line)
                     
-            except:
+            except Exception as e:
+                self.log(f"[Error] {e}")
                 break
         
         self.is_connected = False
@@ -156,14 +195,16 @@ class IRCClientGUI:
                         self.current_channel = None
                 elif cmd == "NICK":
                     self.socket.send(f"NICK {param}\r\n".encode('utf-8'))
+                elif cmd == "NAMES":
+                    self.socket.send(f"NAMES {param}\r\n".encode('utf-8'))
                 else:
-                    # 기타 명령어는 그대로 전송
                     self.socket.send(f"{cmd_line}\r\n".encode('utf-8'))
             else:
                 # 일반 대화 모드
                 if self.current_channel:
+                    # 내가 보낸 메시지도 화면에 표시 (서버가 에코해주지 않는 구조라면)
                     self.socket.send(f"PRIVMSG {self.current_channel} :{msg}\r\n".encode('utf-8'))
-                    self.log(f"[{self.current_channel}] <Me> {msg}")
+                    self.log(f"[{self.current_channel}] <{self.nickname}> {msg}")
                 else:
                     self.log("[System] Join a channel first! (/join #channel)")
             
