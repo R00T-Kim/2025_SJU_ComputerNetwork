@@ -25,6 +25,7 @@ RFC 1459 프로토콜의 핵심 기능을 준수하여 개발되었으며, GUI �
 - **GUI**: Tkinter
 - **Concurrency**: Threading
 - **Protocols**: IRC (RFC 1459), HTTP/1.1 스타일 (RFC 7230 준수)
+- **Extra**: HTTP 기반 묵찌빠 결투장 (raw socket, polling)
 
 ## 🚀 실행 방법 (How to Run)
 
@@ -54,6 +55,16 @@ python -m src.client
   - `make run-http-server`
   - `make run-http-client`
 
+### 4. HTTP 기반 묵찌빠 결투장 (RPS) 실행
+- 서버: `python -m RPS.server` (기본 `0.0.0.0:9090`) 또는 `make run-rps-server`
+- 클라이언트: `python -m RPS.client --host 127.0.0.1 --port 9090` 또는 `make run-rps-client`
+- 클라이언트 흐름:
+  1) 실행 후 로그인 또는 계정 생성 선택.
+  2) 로비에서 `/create <arena name>` 또는 `/join <arena_id> <player|spectator>`로 참여.
+  3) 로비 채팅: `/chat <message>`, 종료: `/quit`
+  4) 아레나에서는 `/move <rock|paper|scissor>`, `/chat <message>`, `/leave`
+  - 클라이언트는 1초 간격으로 로비/아레나 상태와 채팅을 폴링합니다.
+
 ## 💬 사용 가능한 명령어
 
 클라이언트 채팅 입력창에서 아래의 명령어들을 사용할 수 있습니다.
@@ -72,6 +83,13 @@ python -m src.client
 ├── docs/                      # 프로젝트 문서
 │   ├── RFC1459_Summary.md     # 프로토콜 분석 내용
 │   └── Team_Info.txt          # 팀원 정보
+├── RPS/                       # HTTP 기반 묵찌빠 결투장 (raw HTTP + polling)
+│   ├── __init__.py
+│   ├── client.py              # 터미널 클라이언트
+│   ├── http_utils.py          # HTTP 파서/빌더
+│   ├── models.py              # User/Arena 데이터 모델
+│   ├── server.py              # 게임 서버
+│   └── state.py               # 상태 관리, 게임 로직, 영속성
 ├── http_ver/                  # HTTP 기반 채팅 버전 (소켓 + RFC7230 스타일)
 │   ├── __init__.py
 │   ├── channel_manager.py
