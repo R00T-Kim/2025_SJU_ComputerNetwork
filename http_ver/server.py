@@ -24,6 +24,10 @@ def handle_client(conn, addr):
             channels = channel_manager.list_channels()
             send_json(conn, 200, {"channels": channels})
 
+        if method == "OPTIONS":
+            send_response(conn, 200, "OK", "")
+            return
+        
         elif method == "POST" and path_only == "/join":
             payload = _parse_json(body)
             nick = payload.get("nick")

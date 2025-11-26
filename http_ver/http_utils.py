@@ -55,6 +55,9 @@ def send_response(sock, status, reason, body, content_type="text/plain", headers
         "Content-Type": content_type,
         "Content-Length": str(len(body)),
         "Connection": "close",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
         **headers,
     }
     header_lines = [
