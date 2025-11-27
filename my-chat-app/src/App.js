@@ -1,116 +1,180 @@
-// src/App.js
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import './App.css';
 
-// 백엔드 주소 (Python raw socket server)
 const API_URL = 'http://localhost:8080';
 
 function App() {
-    const [step, setStep] = useState('login'); // login | chat
+    const [step, setStep] = useState('login');
     const [nick, setNick] = useState('');
-    const [channel, setChannel] = useState('#general'); // 기본 채널
+    const [channel, setChannel] = useState('#general');
+    const [channels, setChannels] = useState(['#general']);
+    const [onlineUsers, setOnlineUsers] = useState([]);
+
     const [inputMsg, setInputMsg] = useState('');
     const [messages, setMessages] = useState([]);
     const [lastId, setLastId] = useState(0);
-    const [channels, setChannels] = useState(['#general', '#random', '#dev']); // 데모용 채널 목록
+    const [selectedFile, setSelectedFile] = useState(null);
 
     const messagesEndRef = useRef(null);
 
-    // 자동 스크롤
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     };
 
+    useEffect(() => { scrollToBottom(); }, [messages]);
+
+    // 초기 데이터 로드
     useEffect(() => {
-        scrollToBottom();
-    }, [messages]);
+        if(step === 'chat') {
+            fetchChannels();
+            fetchUsers();
+            const userInterval = setInterval(fetchUsers, 5000);
+            return () => clearInterval(userInterval);
+        }
+    }, [step]);
 
-    // 로그인 (채널 입장)
+    const fetchChannels = async () => {
+        try {
+            const res = await axios.get(`${API_URL}/channels`);
+            if(res.data.channels) setChannels(res.data.channels);
+        } catch(e) { console.error("채널 목록 로드 실패", e); }
+    };
+
+    const fetchUsers = async () => {
+        try {
+            const res = await axios.get(`${API_URL}/users`);
+            if(res.data.users) setOnlineUsers(res.data.users);
+        } catch(e) {}
+    };
+
+    // 로그인
     const handleLogin = async () => {
-        if (!nick.trim()) return alert("닉네임을 입력하세요.");
+        if (!nick.trim()) return alert("닉네임을 입력해주세요!");
+        // 바로 입장 시도
+        const success = await joinChannel(channel);
+        if(success) setStep('chat');
+    };
+
+    // 채널 입장 (핵심 수정: async/await 처리 및 에러 핸들링)
+    const joinChannel = async (targetChannel) => {
         try {
-            // 1. 채널 입장 요청
-            await axios.post(`${API_URL}/join`, { nick, channel });
-            setStep('chat');
-            // 2. 초기 데이터 로딩 및 폴링 시작
+            await axios.post(`${API_URL}/join`, { nick, channel: targetChannel });
+            setChannel(targetChannel);
+            setMessages([]);
+            setLastId(0);
+            return true;
         } catch (err) {
-            alert("서버 연결 실패! 백엔드가 켜져있나요?");
-            console.error(err);
+            console.error("입장 실패:", err);
+            alert(`채널 입장 실패: ${targetChannel}\n서버가 켜져있나요?`);
+            return false;
         }
     };
 
-    // 메시지 전송
-    const sendMessage = async (e) => {
-        e.preventDefault();
-        if (!inputMsg.trim()) return;
-
-        try {
-            await axios.post(`${API_URL}/message`, {
-                nick,
-                channel,
-                text: inputMsg
-            });
-            setInputMsg('');
-        } catch (err) {
-            console.error("전송 실패", err);
+    // 채널 생성 (핵심 수정: 생성 후 바로 입장)
+    const createChannel = async () => {
+        const newCh = prompt("새 채널 이름 (예: #coding)");
+        if(newCh) {
+            // 목록에 먼저 추가하고 입장을 시도
+            const success = await joinChannel(newCh);
+            if(success) {
+                setChannels(prev => [...new Set([...prev, newCh])]);
+            }
         }
     };
 
-    // 주기적 폴링 (새 메시지 확인)
+    // DM 시작
+    const startDM = (targetUser) => {
+        if(targetUser === nick) return;
+        const sorted = [nick, targetUser].sort().join('_');
+        joinChannel(`!dm_${sorted}`);
+    };
+
+    // 폴링 로직
     useEffect(() => {
         if (step !== 'chat') return;
+        let isMounted = true;
 
-        const interval = setInterval(async () => {
+        const poll = async () => {
             try {
                 const res = await axios.get(`${API_URL}/events`, {
                     params: { channel, since: lastId }
                 });
+                if(!isMounted) return;
 
                 const { events, latest } = res.data;
-
                 if (events && events.length > 0) {
-                    // 중복 방지 및 상태 업데이트
                     setMessages(prev => {
-                        // 이미 있는 ID는 제외 (혹시 모를 중복 방지)
                         const newEvents = events.filter(e => !prev.some(p => p.id === e.id));
                         return [...prev, ...newEvents];
                     });
                     setLastId(latest);
                 } else {
-                    // 이벤트가 없어도 최신 ID 동기화 (서버가 latest를 줄 경우)
                     if(latest > lastId) setLastId(latest);
                 }
             } catch (err) {
-                console.error("Polling error:", err);
+                // 폴링 에러는 조용히 넘어가거나 콘솔에만 출력
+                // console.error(err);
             }
-        }, 1000); // 1초마다 갱신
+        };
 
-        return () => clearInterval(interval);
+        const interval = setInterval(poll, 1000);
+        return () => {
+            isMounted = false;
+            clearInterval(interval);
+        };
     }, [step, channel, lastId]);
 
-    // 채널 변경 핸들러 (현재는 단순 UI 전환)
-    const changeChannel = async (newChannel) => {
-        // 기존 채널 퇴장(선택사항) 후 새 채널 입장 로직 추가 가능
-        setChannel(newChannel);
-        setMessages([]); // 메시지 초기화
-        setLastId(0);    // 처음부터 다시 받기
-        await axios.post(`${API_URL}/join`, { nick, channel: newChannel });
+    const handleFileChange = (e) => {
+        if(e.target.files.length > 0) setSelectedFile(e.target.files[0]);
     };
 
-    // --- 렌더링 ---
+    // 메시지 전송
+    const sendMessage = async (e) => {
+        e.preventDefault();
+
+        // 아무것도 없으면 리턴
+        if (!inputMsg.trim() && !selectedFile) return;
+
+        let imgUrl = null;
+        if (selectedFile) {
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+            try {
+                const res = await axios.post(`${API_URL}/upload`, formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' }
+                });
+                imgUrl = res.data.url;
+            } catch (err) {
+                alert("파일 업로드 실패! 서버 로그를 확인하세요.");
+                console.error(err);
+                return;
+            }
+        }
+
+        try {
+            await axios.post(`${API_URL}/message`, {
+                nick,
+                channel,
+                text: imgUrl || inputMsg,
+                msg_type: imgUrl ? 'image' : 'text'
+            });
+            setInputMsg('');
+            setSelectedFile(null);
+        } catch (err) {
+            console.error("메시지 전송 실패", err);
+            alert("메시지 전송 실패!");
+        }
+    };
+
     if (step === 'login') {
         return (
             <div className="login-container">
                 <div className="login-box">
-                    <h2>🚀 Team Project Chat</h2>
-                    <input
-                        type="text"
-                        placeholder="닉네임을 입력하세요"
-                        value={nick}
-                        onChange={(e) => setNick(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
-                    />
+                    <h2>🚀 Team Chat</h2>
+                    <input type="text" placeholder="사용할 닉네임" value={nick}
+                           onChange={e=>setNick(e.target.value)}
+                           onKeyPress={e=>e.key==='Enter' && handleLogin()} />
                     <button onClick={handleLogin}>입장하기</button>
                 </div>
             </div>
@@ -119,47 +183,41 @@ function App() {
 
     return (
         <div className="app-container">
-            {/* 사이드바 (채널 목록) */}
             <div className="sidebar">
-                <div className="sidebar-header">Chat Channels</div>
-                <div className="channel-list">
-                    {channels.map(ch => (
-                        <div
-                            key={ch}
-                            className={`channel-item ${channel === ch ? 'active' : ''}`}
-                            onClick={() => changeChannel(ch)}
-                        >
-                            # {ch}
-                        </div>
-                    ))}
-                </div>
-                <div className="user-info">
-                    <div className="avatar"></div>
-                    <div>{nick}</div>
-                </div>
+                <div className="section-title">CHANNELS <button onClick={createChannel}>+</button></div>
+                {channels.map(ch => (
+                    <div key={ch} className={`item ${channel===ch?'active':''}`} onClick={()=>joinChannel(ch)}>
+                        {ch.startsWith('!dm') ? '💬 DM' : ch}
+                    </div>
+                ))}
+
+                <div className="section-title" style={{marginTop:'20px'}}>USERS</div>
+                {onlineUsers.map(u => (
+                    <div key={u} className="item user-item" onClick={()=>startDM(u)}>
+                        🟢 {u} {u===nick && '(me)'}
+                    </div>
+                ))}
             </div>
 
-            {/* 채팅 영역 */}
             <div className="chat-area">
                 <div className="chat-header">
-                    # {channel}
+                    {channel.startsWith('!dm') ? channel : channel}
                 </div>
-
                 <div className="message-list">
                     {messages.map((msg) => {
                         if (msg.type === 'join' || msg.type === 'part') {
-                            return (
-                                <div key={msg.id} className="system-message">
-                                    -- {msg.nick}님이 {msg.type === 'join' ? '입장했습니다' : '나갔습니다'} --
-                                </div>
-                            )
+                            return <div key={msg.id} className="system-msg">-- {msg.nick}님이 {msg.type === 'join' ? '입장' : '퇴장'}했습니다 --</div>
                         }
                         const isMe = msg.nick === nick;
                         return (
-                            <div key={msg.id} className={`message ${isMe ? 'mine' : 'others'}`}>
-                                {!isMe && <span className="message-sender">{msg.nick}</span>}
+                            <div key={msg.id} className={`msg-row ${isMe ? 'mine' : ''}`}>
+                                {!isMe && <div className="sender">{msg.nick}</div>}
                                 <div className="bubble">
-                                    {msg.text}
+                                    {msg.msg_type === 'image' ? (
+                                        <img src={msg.text} alt="uploaded" className="chat-img" />
+                                    ) : (
+                                        msg.text
+                                    )}
                                 </div>
                             </div>
                         );
@@ -167,16 +225,19 @@ function App() {
                     <div ref={messagesEndRef} />
                 </div>
 
-                <div className="input-area">
-                    <form className="input-wrapper" onSubmit={sendMessage}>
-                        <input
-                            type="text"
-                            placeholder={`Message #${channel}`}
-                            value={inputMsg}
-                            onChange={(e) => setInputMsg(e.target.value)}
-                        />
-                    </form>
-                </div>
+                <form className="input-area" onSubmit={sendMessage}>
+                    <input type="file" id="file" style={{display:'none'}} onChange={handleFileChange} />
+                    <label htmlFor="file" className="file-btn" style={{color: selectedFile ? '#4a90e2' : '#777'}}>
+                        {selectedFile ? '✅' : '📎'}
+                    </label>
+                    <input
+                        type="text"
+                        placeholder={selectedFile ? `${selectedFile.name} 전송 대기중...` : "메시지 입력..."}
+                        value={inputMsg}
+                        onChange={e=>setInputMsg(e.target.value)}
+                    />
+                    <button type="submit">전송</button>
+                </form>
             </div>
         </div>
     );

@@ -7,7 +7,7 @@
 
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background-color: #202225;
+    background-color: #202225; /* Discord 배경색 */
     color: #dcddde;
     overflow: hidden;
 }
@@ -35,31 +35,35 @@ body {
     border-radius: 8px;
     box-shadow: 0 4px 15px rgba(0,0,0,0.2);
     text-align: center;
+    width: 320px;
 }
 
 .login-box h2 { margin-bottom: 20px; color: #fff; }
 .login-box input {
-    padding: 10px;
+    padding: 12px;
     border-radius: 4px;
     border: none;
     margin-bottom: 15px;
     width: 100%;
     background-color: #202225;
     color: white;
+    font-size: 16px;
 }
 .login-box button {
     width: 100%;
-    padding: 10px;
+    padding: 12px;
     background-color: #5865F2; /* Discord Blue */
     color: white;
     border: none;
     border-radius: 4px;
     cursor: pointer;
     font-weight: bold;
+    font-size: 16px;
+    transition: background 0.2s;
 }
 .login-box button:hover { background-color: #4752c4; }
 
-/* --- 메인 레이아웃 (사이드바 + 채팅방) --- */
+/* --- 사이드바 --- */
 .sidebar {
     width: 240px;
     background-color: #2f3136;
@@ -68,43 +72,40 @@ body {
     padding: 10px;
 }
 
-.sidebar-header {
-    padding: 10px;
+.section-title {
+    padding: 10px 5px;
+    font-size: 12px;
     font-weight: bold;
-    color: #fff;
-    border-bottom: 1px solid #202225;
-    margin-bottom: 10px;
+    color: #8e9297;
+    text-transform: uppercase;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
 }
 
-.channel-list {
-    flex: 1;
-    overflow-y: auto;
+.section-title button {
+    background: none;
+    border: none;
+    color: #b9bbbe;
+    cursor: pointer;
+    font-size: 18px;
 }
+.section-title button:hover { color: #fff; }
 
-.channel-item {
+.item {
     padding: 8px 10px;
-    margin-bottom: 4px;
+    margin-bottom: 2px;
     border-radius: 4px;
     cursor: pointer;
     color: #8e9297;
     font-weight: 500;
-}
-.channel-item:hover { background-color: #393c43; color: #dcddde; }
-.channel-item.active { background-color: #393c43; color: #fff; }
-
-.user-info {
-    padding: 10px;
-    background-color: #292b2f;
     display: flex;
     align-items: center;
 }
-.avatar {
-    width: 32px;
-    height: 32px;
-    background-color: #5865F2;
-    border-radius: 50%;
-    margin-right: 10px;
-}
+.item:hover { background-color: #393c43; color: #dcddde; }
+.item.active { background-color: #393c43; color: #fff; }
+
+.user-item { font-size: 14px; }
 
 /* --- 채팅 영역 --- */
 .chat-area {
@@ -123,6 +124,7 @@ body {
     padding: 0 16px;
     font-weight: bold;
     color: #fff;
+    font-size: 16px;
     box-shadow: 0 1px 2px rgba(0,0,0,0.1);
 }
 
@@ -132,27 +134,29 @@ body {
     padding: 20px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
 }
 
-/* 말풍선 스타일 (카카오톡 느낌) */
-.message {
+/* 메시지 스타일 (App.js의 msg-row 클래스와 연결) */
+.msg-row {
     display: flex;
     flex-direction: column;
     max-width: 70%;
 }
 
-.message.mine {
+/* 내 메시지 오른쪽 정렬 */
+.msg-row.mine {
     align-self: flex-end;
     align-items: flex-end;
 }
 
-.message.others {
+/* 상대 메시지 왼쪽 정렬 */
+.msg-row:not(.mine) {
     align-self: flex-start;
     align-items: flex-start;
 }
 
-.message-sender {
+.sender {
     font-size: 12px;
     color: #b9bbbe;
     margin-bottom: 4px;
@@ -166,48 +170,81 @@ body {
     line-height: 1.4;
     word-wrap: break-word;
     box-shadow: 0 1px 1px rgba(0,0,0,0.1);
+    color: #dcddde;
 }
 
-/* 내 말풍선: 카카오 노란색 */
-.message.mine .bubble {
+/* 내 말풍선: 카카오톡 노란색 */
+.msg-row.mine .bubble {
     background-color: #FEE500;
-    color: #000;
+    color: #000; /* 글자 검정 */
     border-top-right-radius: 0;
 }
 
-/* 상대 말풍선: 흰색/회색 */
-.message.others .bubble {
+/* 상대 말풍선: 흰색 */
+.msg-row:not(.mine) .bubble {
     background-color: #ffffff;
-    color: #2e3338;
+    color: #2e3338; /* 글자 짙은 회색 */
     border-top-left-radius: 0;
 }
 
+/* 시스템 메시지 */
+.system-msg {
+    align-self: center;
+    font-size: 12px;
+    color: #72767d;
+    margin: 10px 0;
+    background-color: rgba(0,0,0,0.2);
+    padding: 4px 12px;
+    border-radius: 10px;
+}
+
+/* 이미지 스타일 */
+.chat-img {
+    max-width: 100%;
+    width: 250px;
+    border-radius: 8px;
+    margin-top: 5px;
+    border: 1px solid rgba(0,0,0,0.1);
+}
+
+/* 입력창 영역 (Discord 스타일) */
 .input-area {
     padding: 20px;
     background-color: #36393f;
-}
-
-.input-wrapper {
-    background-color: #40444b;
-    border-radius: 8px;
-    padding: 0 10px;
     display: flex;
     align-items: center;
+    gap: 10px;
 }
 
-.input-wrapper input {
+/* 파일 버튼 */
+.file-btn {
+    font-size: 24px;
+    cursor: pointer;
+    color: #b9bbbe;
+    padding: 5px;
+    transition: color 0.2s;
+}
+.file-btn:hover { color: #dcddde; }
+
+.input-area input[type="text"] {
     flex: 1;
-    background: transparent;
+    background-color: #40444b;
     border: none;
+    border-radius: 8px;
     padding: 12px;
     color: #dcddde;
     font-size: 15px;
     outline: none;
 }
+.input-area input[type="text"]::placeholder { color: #72767d; }
 
-.system-message {
-    align-self: center;
-    font-size: 12px;
-    color: #72767d;
-    margin: 10px 0;
+.input-area button {
+    padding: 10px 20px;
+    background-color: #5865F2;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
 }
+.input-area button:hover { background-color: #4752c4; }
