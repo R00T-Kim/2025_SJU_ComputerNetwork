@@ -7,16 +7,19 @@ const API_URL = 'http://localhost:8080';
 function App() {
     const [step, setStep] = useState('login');
     const [nick, setNick] = useState('');
-    const [channel, setChannel] = useState('#general');
-    const [channels, setChannels] = useState(['#general']);
-    const [onlineUsers, setOnlineUsers] = useState([]);
+    const [channel, setChannel] = useState('# 일반');
+    const [channels, setChannels] = useState(['# 일반']);
+    const [onlineUsers, setOnlineUsers] = useState([]); // [{nick, active}]
 
     const [inputMsg, setInputMsg] = useState('');
     const [messages, setMessages] = useState([]);
     const [lastId, setLastId] = useState(0);
     const [selectedFile, setSelectedFile] = useState(null);
+    const [uploadQueue, setUploadQueue] = useState([]); // {id, name, progress, status, channel}
 
     const messagesEndRef = useRef(null);
+    const lastIdRef = useRef(0);
+    const fileInputRef = useRef(null);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -24,19 +27,66 @@ function App() {
 
     useEffect(() => { scrollToBottom(); }, [messages]);
 
+    const isImageFile = (file) => {
+        if (!file) return false;
+        const mime = file.type || '';
+        const ext = (file.name.split('.').pop() || '').toLowerCase();
+        const imageExts = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg'];
+        return mime.startsWith('image/') || imageExts.includes(ext);
+    };
+
+    const getDMPartner = (ch) => {
+        if (!ch.startsWith('!dm_')) return null;
+        const names = ch.replace('!dm_', '').split('_');
+        const partner = names.find(n => n !== nick) || names[0];
+        return partner || ch;
+    };
+
+    // 포커스 상태를 서버에 알리기
+    useEffect(() => {
+        if (step !== 'chat') return;
+        const sendPresence = (active) => {
+            if (!nick) return;
+            const payload = { nick, active };
+            axios.post(`${API_URL}/presence`, payload, { timeout: 1000 }).catch(() => {});
+        };
+        const handleVisibility = () => {
+            const active = document.visibilityState === 'visible';
+            sendPresence(active);
+        };
+        const handleFocus = () => sendPresence(true);
+        const handleBlur = () => sendPresence(false);
+
+        document.addEventListener('visibilitychange', handleVisibility);
+        window.addEventListener('focus', handleFocus);
+        window.addEventListener('blur', handleBlur);
+
+        // 초기 상태 전송
+        handleVisibility();
+
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibility);
+            window.removeEventListener('focus', handleFocus);
+            window.removeEventListener('blur', handleBlur);
+        };
+    }, [step, nick]);
+
     // 초기 데이터 로드
     useEffect(() => {
         if(step === 'chat') {
             fetchChannels();
             fetchUsers();
-            const userInterval = setInterval(fetchUsers, 5000);
-            return () => clearInterval(userInterval);
+            const interval = setInterval(() => {
+                fetchUsers();
+                fetchChannels();
+            }, 2000);
+            return () => clearInterval(interval);
         }
     }, [step]);
 
     const fetchChannels = async () => {
         try {
-            const res = await axios.get(`${API_URL}/channels`);
+            const res = await axios.get(`${API_URL}/channels`, { params: { nick } });
             if(res.data.channels) setChannels(res.data.channels);
         } catch(e) { console.error("채널 목록 로드 실패", e); }
     };
@@ -63,6 +113,7 @@ function App() {
             setChannel(targetChannel);
             setMessages([]);
             setLastId(0);
+            lastIdRef.current = 0;
             return true;
         } catch (err) {
             console.error("입장 실패:", err);
@@ -73,8 +124,10 @@ function App() {
 
     // 채널 생성 (핵심 수정: 생성 후 바로 입장)
     const createChannel = async () => {
-        const newCh = prompt("새 채널 이름 (예: #coding)");
-        if(newCh) {
+        const raw = prompt("새 채널 이름 (예: 공부방)");
+        const trimmed = raw ? raw.trim() : "";
+        if(trimmed) {
+            const newCh = trimmed.startsWith("#") ? trimmed : `# ${trimmed}`;
             // 목록에 먼저 추가하고 입장을 시도
             const success = await joinChannel(newCh);
             if(success) {
@@ -93,14 +146,23 @@ function App() {
     // 폴링 로직
     useEffect(() => {
         if (step !== 'chat') return;
-        let isMounted = true;
+        let canceled = false;
+        let inFlight = false;
+        let timerId = null;
+
+        const updateLastId = (val) => {
+            lastIdRef.current = val;
+            setLastId(val);
+        };
 
         const poll = async () => {
+            if (canceled || inFlight) return;
+            inFlight = true;
             try {
                 const res = await axios.get(`${API_URL}/events`, {
-                    params: { channel, since: lastId }
+                    params: { channel, since: lastIdRef.current, nick }
                 });
-                if(!isMounted) return;
+                if(canceled) return;
 
                 const { events, latest } = res.data;
                 if (events && events.length > 0) {
@@ -108,44 +170,111 @@ function App() {
                         const newEvents = events.filter(e => !prev.some(p => p.id === e.id));
                         return [...prev, ...newEvents];
                     });
-                    setLastId(latest);
-                } else {
-                    if(latest > lastId) setLastId(latest);
+                    updateLastId(latest);
+                } else if(latest > lastIdRef.current) {
+                    updateLastId(latest);
                 }
             } catch (err) {
                 // 폴링 에러는 조용히 넘어가거나 콘솔에만 출력
-                // console.error(err);
+            } finally {
+                inFlight = false;
+                if (!canceled) {
+                    timerId = setTimeout(poll, 1000);
+                }
             }
         };
 
-        const interval = setInterval(poll, 1000);
+        poll();
         return () => {
-            isMounted = false;
-            clearInterval(interval);
+            canceled = true;
+            if (timerId) clearTimeout(timerId);
         };
-    }, [step, channel, lastId]);
+    }, [step, channel]);
 
     const handleFileChange = (e) => {
         if(e.target.files.length > 0) setSelectedFile(e.target.files[0]);
     };
 
+    const clearFileSelection = () => {
+        setSelectedFile(null);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+    };
+
+    // 페이지 종료 시 서버에 leave 알림 (sendBeacon + keepalive fetch fallback)
+    useEffect(() => {
+        if (step !== 'chat') return;
+        const sendLeave = () => {
+            if (!nick) return;
+            const payload = JSON.stringify({ nick });
+            const blob = new Blob([payload], { type: 'application/json' });
+            if (navigator.sendBeacon) {
+                navigator.sendBeacon(`${API_URL}/leave`, blob);
+            } else {
+                fetch(`${API_URL}/leave`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: payload,
+                    keepalive: true,
+                }).catch(() => {});
+            }
+        };
+        const handler = () => sendLeave();
+        window.addEventListener('beforeunload', handler);
+        window.addEventListener('pagehide', handler);
+        return () => {
+            window.removeEventListener('beforeunload', handler);
+            window.removeEventListener('pagehide', handler);
+        };
+    }, [step, nick]);
+
     // 메시지 전송
     const sendMessage = async (e) => {
         e.preventDefault();
+        const currentChannel = channel;
+        const fileToSend = selectedFile;
+        const textInput = inputMsg;
 
         // 아무것도 없으면 리턴
-        if (!inputMsg.trim() && !selectedFile) return;
+        if (!textInput.trim() && !fileToSend) return;
 
-        let imgUrl = null;
-        if (selectedFile) {
+        let uploadMeta = null;
+        let msgType = 'text';
+        let textToSend = textInput;
+
+        // 전송을 시작하면 선택된 파일을 바로 해제해 다음 전송에 끌려가지 않게 함
+        if (fileToSend) clearFileSelection();
+
+        if (fileToSend) {
+            const uploadId = `${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
+            const fileName = fileToSend.name;
+            setUploadQueue(prev => [...prev, { id: uploadId, name: fileName, progress: 0, status: 'uploading', channel: currentChannel }]);
+
             const formData = new FormData();
-            formData.append('file', selectedFile);
+            formData.append('file', fileToSend);
             try {
                 const res = await axios.post(`${API_URL}/upload`, formData, {
-                    headers: { 'Content-Type': 'multipart/form-data' }
+                    headers: { 'Content-Type': 'multipart/form-data' },
+                    onUploadProgress: (evt) => {
+                        if (!evt.total) return;
+                        const pct = Math.round((evt.loaded * 100) / evt.total);
+                        setUploadQueue(prev => prev.map(item => item.id === uploadId ? { ...item, progress: pct } : item));
+                    }
                 });
-                imgUrl = res.data.url;
+                uploadMeta = {
+                    url: res.data.url,
+                    filename: res.data.filename || fileToSend.name
+                };
+                textToSend = uploadMeta.url;
+                msgType = isImageFile(fileToSend) ? 'image' : 'file';
+                setUploadQueue(prev => prev.map(item => item.id === uploadId ? { ...item, progress: 100, status: 'done' } : item));
+                setTimeout(() => {
+                    setUploadQueue(prev => prev.filter(item => item.id !== uploadId));
+                }, 1500);
             } catch (err) {
+                setUploadQueue(prev => prev.map(item => item.id === uploadId ? { ...item, status: 'error' } : item));
+                setTimeout(() => {
+                    setUploadQueue(prev => prev.filter(item => item.id !== uploadId));
+                }, 3000);
                 alert("파일 업로드 실패! 서버 로그를 확인하세요.");
                 console.error(err);
                 return;
@@ -153,14 +282,19 @@ function App() {
         }
 
         try {
-            await axios.post(`${API_URL}/message`, {
+            const payload = {
                 nick,
                 channel,
-                text: imgUrl || inputMsg,
-                msg_type: imgUrl ? 'image' : 'text'
-            });
+                text: textToSend,
+                msg_type: msgType
+            };
+            if (uploadMeta?.filename) {
+                payload.file_name = uploadMeta.filename;
+            }
+
+            await axios.post(`${API_URL}/message`, payload);
             setInputMsg('');
-            setSelectedFile(null);
+            clearFileSelection();
         } catch (err) {
             console.error("메시지 전송 실패", err);
             alert("메시지 전송 실패!");
@@ -181,44 +315,75 @@ function App() {
         );
     }
 
+    const currentUploads = uploadQueue.filter(u => u.channel === channel);
+
     return (
         <div className="app-container">
             <div className="sidebar">
                 <div className="section-title">CHANNELS <button onClick={createChannel}>+</button></div>
                 {channels.map(ch => (
-                    <div key={ch} className={`item ${channel===ch?'active':''}`} onClick={()=>joinChannel(ch)}>
-                        {ch.startsWith('!dm') ? '💬 DM' : ch}
+                    <div
+                        key={ch}
+                        className={`item ${channel===ch?'active':''}`}
+                        onClick={()=>joinChannel(ch)}
+                    >
+                        {ch.startsWith('!dm')
+                            ? `# ${getDMPartner(ch)}`
+                            : ch}
                     </div>
                 ))}
 
                 <div className="section-title" style={{marginTop:'20px'}}>USERS</div>
                 {onlineUsers.map(u => (
-                    <div key={u} className="item user-item" onClick={()=>startDM(u)}>
-                        🟢 {u} {u===nick && '(me)'}
+                    <div key={u.nick} className="item user-item" onClick={()=>startDM(u.nick)}>
+                        <span className="status-dot" style={{color: u.active ? '#2ecc71' : '#e74c3c'}}>●</span>
+                        &nbsp;{u.nick} {u.nick===nick && '(me)'}
                     </div>
                 ))}
             </div>
 
             <div className="chat-area">
                 <div className="chat-header">
-                    {channel.startsWith('!dm') ? channel : channel}
+                    {channel.startsWith('!dm') ? (getDMPartner(channel)) : channel}
                 </div>
+                {currentUploads.length > 0 && (
+                    <div className="upload-queue">
+                        {currentUploads.map(item => (
+                            <div key={item.id} className={`upload-item ${item.status}`}>
+                                <span className="upload-name">{item.name}</span>
+                                <span className="upload-status">
+                                    {item.status === 'error' ? '실패' : `${item.progress || 0}%`}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                )}
                 <div className="message-list">
                     {messages.map((msg) => {
                         if (msg.type === 'join' || msg.type === 'part') {
-                            return <div key={msg.id} className="system-msg">-- {msg.nick}님이 {msg.type === 'join' ? '입장' : '퇴장'}했습니다 --</div>
+                            return null; // 시스템 메시지는 표시하지 않음
                         }
                         const isMe = msg.nick === nick;
+                        const fileName = msg.file_name || (msg.text ? msg.text.split('/').pop() : '');
                         return (
                             <div key={msg.id} className={`msg-row ${isMe ? 'mine' : ''}`}>
                                 {!isMe && <div className="sender">{msg.nick}</div>}
-                                <div className="bubble">
-                                    {msg.msg_type === 'image' ? (
-                                        <img src={msg.text} alt="uploaded" className="chat-img" />
-                                    ) : (
-                                        msg.text
-                                    )}
-                                </div>
+                                {msg.msg_type === 'image' ? (
+                                    <div className="bubble">
+                                        <a href={msg.text} target="_blank" rel="noreferrer">
+                                            <img src={msg.text} alt={fileName || "uploaded"} className="chat-img" />
+                                        </a>
+                                        {fileName && <div className="file-name">{fileName}</div>}
+                                    </div>
+                                ) : msg.msg_type === 'file' ? (
+                                    <div className="bubble">
+                                        <a href={msg.text} target="_blank" rel="noreferrer" download={fileName}>
+                                            📎 {fileName || '첨부 파일'}
+                                        </a>
+                                    </div>
+                                ) : (
+                                    <div className="bubble">{msg.text}</div>
+                                )}
                             </div>
                         );
                     })}
@@ -226,7 +391,7 @@ function App() {
                 </div>
 
                 <form className="input-area" onSubmit={sendMessage}>
-                    <input type="file" id="file" style={{display:'none'}} onChange={handleFileChange} />
+                    <input type="file" id="file" style={{display:'none'}} onChange={handleFileChange} ref={fileInputRef} />
                     <label htmlFor="file" className="file-btn" style={{color: selectedFile ? '#4a90e2' : '#777'}}>
                         {selectedFile ? '✅' : '📎'}
                     </label>

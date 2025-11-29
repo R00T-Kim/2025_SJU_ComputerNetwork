@@ -130,10 +130,13 @@ def send_file(sock, filepath):
     if os.path.exists(filepath):
         mime, _ = mimetypes.guess_type(filepath)
         mime = mime or "application/octet-stream"
+        headers = {}
+        if not mime.startswith("image/"):
+            headers["Content-Disposition"] = f'attachment; filename="{os.path.basename(filepath)}"'
 
         with open(filepath, "rb") as f:
             data = f.read()
 
-        send_response(sock, 200, "OK", data, content_type=mime)
+        send_response(sock, 200, "OK", data, content_type=mime, headers=headers)
     else:
         send_response(sock, 404, "Not Found", "File not found")

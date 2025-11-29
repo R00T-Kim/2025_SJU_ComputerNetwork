@@ -109,7 +109,7 @@ def main():
     parser = argparse.ArgumentParser(description="HTTP chat client (raw sockets)")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8080)
-    parser.add_argument("--channel", default="#general")
+    parser.add_argument("--channel", default="# 일반")
     parser.add_argument("--nick", default="Guest")
     args = parser.parse_args()
 
