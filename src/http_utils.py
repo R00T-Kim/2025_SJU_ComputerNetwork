@@ -34,6 +34,9 @@ def parse_http_request(sock):
 
         # 2. 바디 읽기 (Content-Length 만큼 정확히 읽기)
         content_length = int(headers.get("content-length", 0))
+        # [안정성 수정] 10MB 이상의 요청은 거부 (서버 메모리 보호)
+        if content_length > 10 * 1024 * 1024:
+            raise ValueError(f"Payload too large: {content_length} bytes")
         body = body_start
         while len(body) < content_length:
             more = sock.recv(4096)

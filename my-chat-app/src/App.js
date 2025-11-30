@@ -79,7 +79,7 @@ function App() {
             const interval = setInterval(() => {
                 fetchUsers();
                 fetchChannels();
-            }, 2000);
+            }, 5000);
             return () => clearInterval(interval);
         }
     }, [step]);
