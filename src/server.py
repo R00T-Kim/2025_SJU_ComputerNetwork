@@ -122,7 +122,8 @@ def handle_client(conn, addr):
                     # 업로드 성공 로그
                     print(f"[UPLOAD] Saved {len(fcontent)} bytes to {filepath}")
 
-                    url = f"http://localhost:{PORT}/uploads/{safe_name}"
+                    req_host = headers.get("host", f"localhost:{PORT}")
+                    url = f"http://{req_host}/uploads/{safe_name}"
                     send_json(conn, 200, {"url": url, "filename": fname, "saved_as": safe_name})
                 else:
                     print("[UPLOAD FAIL] No file part found")
