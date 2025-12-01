@@ -93,10 +93,10 @@ Once started, the chat application should be accessible in your web browser, typ
 
 | 학번       | 이름   | 역할           |
 | :--------- | :----- | :------------- |
-| 21011673   | 한상민 | 프론트엔드     |
-| 21011659 | 김근호 | 역할 |
-| 21011582 | 한현준 | 역할 |
-| 21011650 | 이규민 | 역할 |
+| 21011659   | 김근호 | 프로토콜/소켓 서버 코어 개발 |
+| 21011582   | 한현준 | 채널 및 데이터 관리 개발 |
+| 21011673   | 한상민 | 프론트엔드 및 API 통합 개발 |
+| 21011650   | 이규민 | 품질 보증 및 문서화 |
 
 ---
 ## Simple Structure Schema (Client-Server Network Diagram)
