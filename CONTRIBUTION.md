@@ -6,7 +6,7 @@ This document details the individual contributions of each team member to the "2
 
 ## Team Member Contributions
 
-### 1. 김근호 (학번: 21011659)
+### 1. 이규민 (학번: 21011650)
 
 **Role:** 프로토콜/소켓 서버 코어 개발 (Backend Core Developer)
 
@@ -59,7 +59,7 @@ This document details the individual contributions of each team member to the "2
 
 ---
 
-### 4. 이규민 (학번: 21011650)
+### 4. 김근호 (학번: 21011659)
 
 **Role:** 품질 보증 및 문서화 (QA & Documentation Specialist)
 
